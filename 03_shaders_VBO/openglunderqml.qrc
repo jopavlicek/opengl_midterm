@@ -1,0 +1,15 @@
+<RCC>
+    <qresource prefix="/scenegraph/openglunderqml">
+        <file>main.qml</file>
+    </qresource>
+    <qresource prefix="/">
+        <file>grayscale.frag</file>
+        <file>grayscale.vert</file>
+        <file>invert.frag</file>
+        <file>invert.vert</file>
+        <file>default.frag</file>
+        <file>default.vert</file>
+        <file>muted.frag</file>
+        <file>muted.vert</file>
+    </qresource>
+</RCC>
