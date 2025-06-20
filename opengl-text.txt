@@ -1,0 +1,213 @@
+
+========== CV1 ==========
+- základy vykreslování v opengl
+- máme pole vrcholů a pole barev
+- souřadnicový systém funguje desetinně -1.0 až 1.0 pro X i Y
+- procedurálně si vykreslíme čtverec/trojúhelník/hvězdu
+
+
+
+========== CV2 ==========
+- systém vykreslování si trochu modularizujeme
+- vytvoříme si obecný grafický objekt, který má pozici a barvu
+- z něho podědíme co chceme vykreslit – raketu a vetřelce
+- každá z těchto tříd má implementovanou vlastní funkci render()
+- vrcholy objektu se vykreslují na střed a posunují o pozici objektu z konstruktoru
+- vrcholy a barvy se ukládají do prokládaného pole – 3 souřadnice, 2 barvy
+- vertex pointer se musí pro prokládání nastavit:
+
+	// každý vrchol má 2 složky (x,y) typu GL_FLOAT
+	// stride = velikost celé definice vrcholu (x,y,r,g,b) je 5 * velikost typu GL_FLOAT
+	// začátek prvního vrcholu (x souřadníce)
+
+	glVertexPointer(2, GL_FLOAT, 5*sizeof(GLfloat), &rocket[0]);
+
+	// každý vrchol má 3 složky (r,g,b) typu GL_FLOAT
+	// stride = velikost celé definice vrcholu (x,y,r,g,b) je 5 * velikost typu GL_FLOAT
+	// začátek prvního vrcholu (x souřadníce)
+
+	glColorPointer(3, GL_FLOAT, 5*sizeof(GLfloat), &rocket[2]);
+
+- ve scéně si vytvoříme pole grafických objektů
+- pole projdeme a u každého objektu zavoláme render() metodu
+
+
+
+========== CV3 + CV4 ==========
+- zde se od základu pozmění architektura projektu
+
+(1) VBO
+- každý grafický objekt potřebuje definici vrcholů ve formátu VBO (Vertex Buffer Object)
+- struct Vertex => 2x GLfloat pozice, 3x GL float barvy
+- class VertexBuffer => vezme pole Vertexů, alokuje QOpenGLBuffer, funkce bind() bufferu
+
+	Vertex square[] = {
+    		{ {1.0,0.0}, {1.0, 0.0, 0.0}},
+    		{ {1.0,1.0}, {0.0, 1.0, 0.0}},
+	    	{ {0.0,0.0}, {1.0, 0.0, 1.0}},
+	    	{ {0.0,1.0}, {1.0, 0.0, 1.0}}
+	};
+	m_squareBuffer = new VertexBuffer(square, 4);
+
+(2) SHADER
+- k vykreslení grafických objektů použijeme vertex shader (vrcholy) a fragment shader (pixely)
+- v tomto případě jde o programy napsané pomocí GLSL
+- shadery určují jakým způsobem se má vrchol/pixel vykreslit
+- shader programy mají vstupní a výstupní hodnoty (zde pouze barva a pozice), musíme si pamatovat jejich string název
+- class ShaderProgram => vezme cesty k souborům a názvy vstupů pro vertex shader, vytvoří QOpenGLShaderProgram
+
+	m_invertShader = new ShaderProgram(":/invert.vert", ":/invert.frag", "posAttr", "colAttr");
+        m_grayscaleShader = new ShaderProgram(":/grayscale.vert", ":/grayscale.frag", "position", "color");
+
+(3) GRAPHICAL OBJECT
+- grafický objekt je složen z ShaderProgramu, VertexBufferu a konfigurace vykreslovacích metod
+- má metodu render(), která nabinduje VertexBuffer (co?), z ShaderProgramu vezme data pro vykreslení (jak?), vykreslí
+ 
+	// ve void OpenGLSceneRenderer::init() provedeme následující
+
+	// vytvoříme shader program
+	m_invertShader = new ShaderProgram(":/invert.vert", ":/invert.frag", "posAttr", "colAttr");
+	
+	// vytvoříme vertex buffer object
+        Vertex triangle[] = {
+            { { 0.0,-1.0}, {1.0, 0.0, 0.0} },
+            { {-1.0,-1.0}, {0.0, 1.0, 0.0} },
+            { {-1.0, 0.0}, {1.0, 0.0, 1.0} }
+        };
+        m_triangleBuffer = new VertexBuffer(triangle, 3);
+
+	// vytvoříme si obálku grafického objektu a přidáme vykreslovací metody
+	m_go1 = new GraphicalObject(m_invertShader, m_triangleBuffer);
+        m_go1->addDrawMethod(new DrawMethod(GL_TRIANGLES, 0, 3));
+
+	// v OpenGLSceneRenderer::paint() vykreslíme
+	m_go1->render();
+
+
+
+========== CV4 ==========
+
+	// -------- vytvořit shader program --------
+	m_program = new QOpenGLShaderProgram();
+	m_program->addShaderFromSourceFile(QOpenGLShader::Vertex, ":/muted.vert");
+	m_program->addShaderFromSourceFile(QOpenGLShader::Fragment, ":/muted.frag");
+	m_program->link();
+
+	// pointer na vstupní shader atribut s názvem např. positionIn
+	// sem budeme posíla
+	m_posAttr = m_program->attributeLocation("positionIn");
+	m_colAttr = m_program->attributeLocation("colorIn");
+
+	// -------- vytvořit vertex buffer --------
+	Vertex house[] = {
+		{ {0.3,-0.3}, {1.0, 0.0, 0.0}},
+		{ {0.3,-0.7}, {1.0, 0.0, 0.0}},
+		{ {0.7,-0.3}, {1.0, 0.0, 0.0}},
+		{ {0.7,-0.7}, {1.0, 0.0, 0.0}},
+
+		{ {0.2,-0.3}, {1.0, 1.0, 0.0}},
+		{ {0.8,-0.3}, {1.0, 1.0, 0.0}},
+		{ {0.5,-0.1}, {1.0, 1.0, 0.0}}
+	};
+
+	m_houseBuffer.create();
+	m_houseBuffer.setUsagePattern( QOpenGLBuffer::StreamDraw );
+	m_houseBuffer.bind();
+	m_houseBuffer.allocate( house, sizeof(house) );
+
+	// -------- vykreslit scénu --------
+
+	// začni používat shader
+	m_program->bind();
+
+	// aktivuj vstupy dat objektů 
+    m_program->enableAttributeArray(m_posAttr);
+    m_program->enableAttributeArray(m_colAttr);
+
+    m_houseBuffer.bind(); // do not forget!
+
+    m_program->setAttributeBuffer(m_posAttr, GL_FLOAT, 0, 2, sizeof(Vertex));
+    m_program->setAttributeBuffer(m_colAttr, GL_FLOAT, 2*sizeof(GL_FLOAT), 3, sizeof(Vertex));
+
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDrawArrays(GL_TRIANGLES, 4, 7);
+
+    m_program->disableAttributeArray(m_posAttr);
+    m_program->disableAttributeArray(m_colAttr);
+    m_program->release();
+
+
+
+
+
+
+
+================= VYKRESLENÍ POMOCÍ VBO BEZ SHADERU =================
+
+void SceneWindow::render()
+{
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    GLuint vertexID;
+    GLuint colorID;
+
+    glGenBuffers(1, &vertexID);
+    glGenBuffers(1, &colorID);
+
+    GLfloat verticies[] = {
+         0.0,-1.0,
+        -1.0,-1.0,
+        -1.0, 0.0,
+    };
+
+    GLfloat colors[] = {
+        1.0, 0.0, 0.0,
+        0.0, 1.0, 0.0,
+        0.0, 0.0, 1.0
+    };
+
+    glBindBuffer(GL_ARRAY_BUFFER, vertexID);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verticies), verticies, GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, colorID);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(colors), colors, GL_STATIC_DRAW);
+
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+
+    glBindBuffer(GL_ARRAY_BUFFER, vertexID);
+    glVertexPointer(2, GL_FLOAT, 0, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, colorID);
+    glColorPointer(3, GL_FLOAT, 0, 0);
+
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    glDisableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_VERTEX_ARRAY);
+
+    glFlush();
+
+    GLenum err;
+    while ((err = m_functions->glGetError()) != GL_NO_ERROR) {
+        qDebug() << "OpenGL error: " << err << "\n";
+    }
+}
+
+================= VYKRESLENÍ POMOCÍ VBO S SHADEREM =================
+
+....
+
+glEnableVertexAttribArray(m_positionAttribute);
+glEnableVertexAttribArray(m_colorAttribute);
+
+glBindBuffer(GL_ARRAY_BUFFER, m_vertexBufferId);
+glVertexAttribPointer(m_posAttr, 2, GL_FLOAT,6 GL_FALSE, 0, 0);
+
+glBindBuffer(GL_ARRAY_BUFFER, m_colorBufferId);
+glVertexAttribPointer(m_colAttr, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+glDrawArrays(GL_TRIANGLES, 0, 3);
+
+glDisableVertexAttribArray(m_positionAttribute);
+glDisableVertexAttribArray(m_colorAttribute);
+
+....
